@@ -1,0 +1,9 @@
+#Video Keyword; ref frame; path
+video1; 0; "C:\\video1.mp4"
+video2; 10; "C:\\video2.mp4"
+video3; 3210; "C:\\video3.mp4"
+
+#Timeline Keyword; source; play speed(optional); [start frame; center (optional); resolution(optional)]; [stop frame; center (optional); resolution(optional)]
+timeline; video1; 1; [0, 960x640, 1920x1080]; [322, 960x640, 1920x1080]
+timeline; video3; 0.5; [3210, 960x640, 1920x1080]; [3310, 1920x1080, 3840x2160]
+timeline; video2; 2; [4000]; [5000] 
