@@ -2,7 +2,7 @@ import os
 import subprocess
 
 
-videos = []
+videos = {}
 timeline = []
 
 
@@ -10,7 +10,7 @@ def read_video_info(line):
     video_name = line.split(";")[0].strip()
     ref_frame = line.split(";")[1].strip()
     vid_path = line.split(";")[2].strip()
-    videos.append({"Video": video_name, "Ref_Frame": ref_frame, "Path": vid_path})
+    videos[video_name] = (ref_frame, vid_path)
 
 
 def read_extra_settings(settings_list):
@@ -51,15 +51,25 @@ def read_txt(config_path):
         read_config(f)
 
 
-def final_command():
-    cmd = ["ffmpeg", "-framerate", "24", "-pattern_type", "glob", "-i",
-           "24", "-pix_fmt", "yuv420p"]
-
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = process.communicate()
-    print(out)
+def stitch_videos():
+    video_order = [timeline[i]["Video"] for i in range(len(timeline))]
+    video_paths = [videos[vid_name][1] for vid_name in video_order]
+    cmd = ["ffmpeg"]
+    for video_path in video_paths:
+        cmd.append("-i")
+        cmd.append(video_path)
+    # add the filter to concat videos
+    cmd.append("-filter_complex")
+    filter_text = "concat=n={}:v=1:a=1".format(len(video_paths))
+    cmd.append(filter_text)
+    # add the output name
+    cmd.append("-y")
+    cmd.append("./Data/output.mp4")
+    # run the command
+    with subprocess.Popen(cmd, stdout=subprocess.PIPE, bufsize=1, universal_newlines=True) as p:
+        for line in p.stdout:
+            print(line, end="")
 
 
 read_txt("./timeline.txt")
-print(videos)
-print(timeline)
+stitch_videos()
