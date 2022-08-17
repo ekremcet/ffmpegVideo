@@ -4,6 +4,9 @@ import subprocess
 
 videos = {}
 timeline = []
+video_order = []
+video_fps = []
+video_path = []
 
 
 def read_video_info(line):
@@ -51,7 +54,101 @@ def read_txt(config_path):
         read_config(f)
 
 
+def get_frame_rate(video_path):
+    # this is used to get framerate of video
+    # framerate will be used to determine exact second to trim the video
+    cmd = ["ffprobe", video_path, "-v", "0", "-select_streams", "v",
+           "-print_format", "flat", "-show_entries", "stream=r_frame_rate"]
+    out = subprocess.check_output(cmd)
+    rate = out.decode("utf-8").split("=")[1].strip()[1:-1].split("/")
+    if len(rate) == 1:
+        return float(rate[0])
+    elif len(rate) == 2:
+        return float(rate[0]) / float(rate[1])
+    return -1
+
+
+def calculate_time_stamp(video, fps):
+    video_start_frame = video["StartConfig"]["Frame"]
+    video_end_frame = video["EndConfig"]["Frame"]
+
+    start_time = float(video_start_frame)/fps
+    end_time = float(video_end_frame)/fps
+
+    return (start_time, end_time)
+
+
+def trim_videos():
+    print("Trimming videos with given frame numbers")
+    # fill the global arrays (they will be used later as well)
+    global video_order, video_paths, video_fps
+    video_order = [timeline[i]["Video"] for i in range(len(timeline))]
+    video_paths = [videos[vid_name][1] for vid_name in video_order]
+    # get frame rate of each video to determine exact time stamp for trimming
+    video_fps = [get_frame_rate(vid_path) for vid_path in video_paths]
+    # calculate time stamps
+    video_stamps = [calculate_time_stamp(video, video_fps[i]) for i, video in enumerate(timeline)]
+    os.makedirs("./tmp", exist_ok=True)
+    for i, video_path in enumerate(video_paths):
+        # prepare videos individually
+        start_time, end_time = video_stamps[i]
+        cmd = ["ffmpeg", "-ss", str(start_time), "-to", str(end_time), "-i", video_path,
+               "-vcodec", "copy", "-acodec", "copy", "-y", "./tmp/tmp_{}.mp4".format(i + 1)]
+        # run the command
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err = process.communicate()
+
+
+def get_video_settings(video):
+    video_speed = video["Speed"]
+    if "Center" in video["StartConfig"]:
+        video_start_center = video["StartConfig"]["Center"]
+        video_start_res = video["StartConfig"]["Resolution"]
+        video_end_center = video["EndConfig"]["Center"]
+        video_end_res = video["EndConfig"]["Resolution"]
+        return video_speed, video_start_center, video_start_res, video_end_center, video_end_res
+    else:
+        return video_speed
+
+
+def scale_and_speed_videos():
+    print("Changing speed and scale of the videos")
+    video_settings = [get_video_settings(video) for i, video in enumerate(timeline)]
+    for i, setting in enumerate(video_settings):
+        # prepare videos individually
+        if len(setting) == 1:
+            # just change the speed
+            speed = setting
+            fps = video_fps[i] # this is needed to change the frame rate, so frames are not dropped
+            cmd = ["ffmpeg", "-i", "./tmp/tmp_{}.mp4".format(i + 1), "-r", str(fps * float(speed)),
+                   "-filter_complex", "[0:v]setpts={}*PTS[v];[0:a]atempo={}[a]".format(1.0 / float(speed), speed),
+                   "-map", "[v]", "-map", "[a]", "-y", "./tmp/tmp_mod_{}.mp4".format(i + 1)]
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            out, err = process.communicate()
+        else:
+            # change the speed and resolution
+            speed = setting[0]
+            start_center, start_res = setting[1], setting[2]
+            end_center, end_res = setting[3], setting[4]
+            fps = video_fps[i]
+            # TODO CHANGE RESOLUTION HERE
+            cmd = ["ffmpeg", "-i", "./tmp/tmp_{}.mp4".format(i + 1), "-r", str(fps * float(speed)),
+                   "-filter_complex", "[0:v]setpts={}*PTS[v];[0:a]atempo={}[a]".format(1.0 / float(speed), speed),
+                   "-map", "[v]", "-map", "[a]", "-y", "./tmp/tmp_mod_{}.mp4".format(i + 1)]
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            out, err = process.communicate()
+
+
+def prepare_tmp_videos():
+    # prepare tmp videos to stitch
+    # trim, change scale, speed, etc. here
+    print("Preparing tmp videos to stitch")
+    trim_videos()
+    scale_and_speed_videos()
+
+
 def stitch_videos():
+    print("Stitching final videos together")
     video_order = [timeline[i]["Video"] for i in range(len(timeline))]
     video_paths = [videos[vid_name][1] for vid_name in video_order]
     cmd = ["ffmpeg"]
@@ -71,5 +168,7 @@ def stitch_videos():
             print(line, end="")
 
 
-read_txt("./timeline.txt")
-stitch_videos()
+if __name__ == '__main__':
+    read_txt("./timeline.txt")
+    prepare_tmp_videos()
+    # stitch_videos()
