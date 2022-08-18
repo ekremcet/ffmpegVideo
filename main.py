@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 
 
@@ -116,25 +117,23 @@ def scale_and_speed_videos():
     video_settings = [get_video_settings(video) for i, video in enumerate(timeline)]
     for i, setting in enumerate(video_settings):
         # prepare videos individually
+        speed = setting if len(setting) == 1 else setting[0]
+        fps = video_fps[i]  # this is needed to change the frame rate, so frames are not dropped
+        # change the speed first
+        cmd = ["ffmpeg", "-i", "./tmp/tmp_{}.mp4".format(i + 1),
+               "-filter_complex", "[0:v]setpts={}*PTS[v];[0:a]atempo={}[a]".format(1.0 / float(speed), speed),
+               "-map", "[v]", "-map", "[a]", "-y", "./tmp/tmp_speed_{}.mp4".format(i + 1)]
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err = process.communicate()
         if len(setting) == 1:
-            # just change the speed
-            speed = setting
-            fps = video_fps[i] # this is needed to change the frame rate, so frames are not dropped
-            cmd = ["ffmpeg", "-i", "./tmp/tmp_{}.mp4".format(i + 1), "-r", str(fps * float(speed)),
-                   "-filter_complex", "[0:v]setpts={}*PTS[v];[0:a]atempo={}[a]".format(1.0 / float(speed), speed),
-                   "-map", "[v]", "-map", "[a]", "-y", "./tmp/tmp_mod_{}.mp4".format(i + 1)]
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            out, err = process.communicate()
+            # resolution will not change, so change the name
+            os.rename("./tmp/tmp_speed_{}.mp4".format(i + 1), "./tmp/tmp_mod_{}.mp4".format(i + 1))
         else:
-            # change the speed and resolution
-            speed = setting[0]
+            # if resolution is given, change the resolution as well
             start_center, start_res = setting[1], setting[2]
             end_center, end_res = setting[3], setting[4]
-            fps = video_fps[i]
-            # TODO CHANGE RESOLUTION HERE
-            cmd = ["ffmpeg", "-i", "./tmp/tmp_{}.mp4".format(i + 1), "-r", str(fps * float(speed)),
-                   "-filter_complex", "[0:v]setpts={}*PTS[v];[0:a]atempo={}[a]".format(1.0 / float(speed), speed),
-                   "-map", "[v]", "-map", "[a]", "-y", "./tmp/tmp_mod_{}.mp4".format(i + 1)]
+            cmd = ["ffmpeg", "-i", "./tmp/tmp_speed_{}.mp4".format(i + 1),
+                   "-vf", "scale={}".format(end_res), "-y", "./tmp/tmp_mod_{}.mp4".format(i + 1)]
             process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             out, err = process.communicate()
 
@@ -149,26 +148,29 @@ def prepare_tmp_videos():
 
 def stitch_videos():
     print("Stitching final videos together")
-    video_order = [timeline[i]["Video"] for i in range(len(timeline))]
-    video_paths = [videos[vid_name][1] for vid_name in video_order]
     cmd = ["ffmpeg"]
-    for video_path in video_paths:
+    for i in range(len(timeline)):
         cmd.append("-i")
-        cmd.append(video_path)
+        cmd.append("./tmp/tmp_mod_{}.mp4".format(i + 1))
     # add the filter to concat videos
     cmd.append("-filter_complex")
-    filter_text = "concat=n={}:v=1:a=1".format(len(video_paths))
+    filter_text = "concat=n={}:v=1:a=1".format(len(timeline))
     cmd.append(filter_text)
     # add the output name
     cmd.append("-y")
     cmd.append("./Data/output.mp4")
+    print(cmd)
     # run the command
     with subprocess.Popen(cmd, stdout=subprocess.PIPE, bufsize=1, universal_newlines=True) as p:
         for line in p.stdout:
             print(line, end="")
 
+    # delete the tmp folder
+    shutil.rmtree("./tmp/", ignore_errors=False, onerror=None)
+
 
 if __name__ == '__main__':
     read_txt("./timeline.txt")
     prepare_tmp_videos()
-    # stitch_videos()
+    stitch_videos()
+
