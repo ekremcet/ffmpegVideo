@@ -159,7 +159,7 @@ def scale_and_speed_videos():
             start_center, start_res = setting[2], setting[3]
             end_center, end_res = setting[4], setting[5]
             cmd = ["ffmpeg", "-i", "./tmp/tmp_speed_{}.mp4".format(i + 1),
-                   "-vf", "scale={}".format(end_res), "-c:v", "copy", "-c:a", "copy",
+                   "-vf", "scale={}".format(end_res),
                    "-y", "./tmp/tmp_mod_{}.mp4".format(i + 1)]
             process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             out, err = process.communicate()
