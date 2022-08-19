@@ -1,9 +1,9 @@
 #Video Keyword; ref frame; path
 video1; 0; ./Data/first.mp4
 video2; 10; ./Data/second.mp4
-video3; 3210; ./Data/third.mp4
+video3; 3210; ./Data/third_noaud.mp4
 
-#Timeline Keyword; source; play speed(optional); [start frame; center (optional); resolution(optional)]; [stop frame; center (optional); resolution(optional)]
-timeline; video1; 1; [0, 960x640, 3840x2160]; [110, 960x640, 3840x2160]
-timeline; video3; 0.5; [60, 960x640, 1920x1080]; [250, 1920x1080, 3840x2160]
-timeline; video2; 2; [30]; [230]
+#Timeline Keyword; source; has_audio; play speed(optional); [start frame; center (optional); resolution(optional)]; [stop frame; center (optional); resolution(optional)]
+timeline; video1; 1; 1; [0, 960x640, 3840x2160]; [110, 960x640, 3840x2160]
+timeline; video3; 0; 0.5; [60, 960x640, 1920x1080]; [250, 1920x1080, 3840x2160]
+timeline; video2; 1; 2; [30]; [230]

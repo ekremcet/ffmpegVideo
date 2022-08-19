@@ -7,7 +7,7 @@ videos = {}
 timeline = []
 video_order = []
 video_fps = []
-video_path = []
+video_paths = []
 
 
 def read_video_info(line):
@@ -31,14 +31,16 @@ def read_extra_settings(settings_list):
 
 def read_timeline_info(line):
     video_name = line.split(";")[1].strip()
-    speed = line.split(";")[2].strip()
+    has_aud = line.split(";")[2].strip()
+    speed = line.split(";")[3].strip()
     start_settings = line.split("[")[1]
     stop_settings = line.split("[")[-1]
 
     start_config = read_extra_settings(start_settings)
     end_config = read_extra_settings(stop_settings)
 
-    timeline.append({"Video": video_name, "Speed": speed, "StartConfig": start_config, "EndConfig": end_config})
+    timeline.append({"Video": video_name, "HasAud": has_aud, "Speed": speed,
+                     "StartConfig": start_config, "EndConfig": end_config})
 
 
 def read_config(config_file):
@@ -94,7 +96,7 @@ def trim_videos():
         # prepare videos individually
         start_time, end_time = video_stamps[i]
         cmd = ["ffmpeg", "-ss", str(start_time), "-to", str(end_time), "-i", video_path,
-               "-vcodec", "copy", "-acodec", "copy", "-y", "./tmp/tmp_{}.mp4".format(i + 1)]
+               "-c:v", "copy", "-c:a", "copy", "-y", "./tmp/tmp_{}.mp4".format(i + 1)]
         # run the command
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         out, err = process.communicate()
@@ -102,14 +104,37 @@ def trim_videos():
 
 def get_video_settings(video):
     video_speed = video["Speed"]
+    has_aud = video["HasAud"]
     if "Center" in video["StartConfig"]:
         video_start_center = video["StartConfig"]["Center"]
         video_start_res = video["StartConfig"]["Resolution"]
         video_end_center = video["EndConfig"]["Center"]
         video_end_res = video["EndConfig"]["Resolution"]
-        return video_speed, video_start_center, video_start_res, video_end_center, video_end_res
+        return video_speed, has_aud, video_start_center, video_start_res, video_end_center, video_end_res
     else:
-        return video_speed
+        return video_speed, has_aud
+
+
+def speed_cmd_with_audio(i, speed):
+    return ["ffmpeg", "-i", "./tmp/tmp_{}.mp4".format(i + 1),
+            "-filter_complex", "[0:v]setpts={}*PTS[v];[0:a]atempo={}[a]".format(1.0 / float(speed), speed),
+            "-map", "[v]", "-map", "[a]",
+            "-y", "./tmp/tmp_speed_{}.mp4".format(i + 1)]
+
+
+def add_dummy_silent_track(i):
+    cmd = ["ffmpeg", "-i", "./tmp/tmp_{}.mp4".format(i + 1), "-f",
+           "lavfi", "-i", "anullsrc", "-shortest", "-c:v", "copy",
+           "-y", "./tmp/tmp_dum_{}.mp4".format(i + 1)]
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = process.communicate()
+
+
+def speed_cmd_without_audio(i, speed):
+    return ["ffmpeg", "-i", "./tmp/tmp_dum_{}.mp4".format(i + 1),
+            "-filter_complex", "[0:v]setpts={}*PTS[v];[0:a]atempo={}[a]".format(1.0 / float(speed), speed),
+            "-map", "[v]", "-map", "[a]",
+            "-y", "./tmp/tmp_speed_{}.mp4".format(i + 1)]
 
 
 def scale_and_speed_videos():
@@ -117,23 +142,25 @@ def scale_and_speed_videos():
     video_settings = [get_video_settings(video) for i, video in enumerate(timeline)]
     for i, setting in enumerate(video_settings):
         # prepare videos individually
-        speed = setting if len(setting) == 1 else setting[0]
-        fps = video_fps[i]  # this is needed to change the frame rate, so frames are not dropped
+        speed = setting[0]
+        has_aud = setting[1]
+        if not int(has_aud):
+            add_dummy_silent_track(i)
         # change the speed first
-        cmd = ["ffmpeg", "-i", "./tmp/tmp_{}.mp4".format(i + 1),
-               "-filter_complex", "[0:v]setpts={}*PTS[v];[0:a]atempo={}[a]".format(1.0 / float(speed), speed),
-               "-map", "[v]", "-map", "[a]", "-y", "./tmp/tmp_speed_{}.mp4".format(i + 1)]
+        # check if the video has audio stream, if not add a dummy silent track
+        cmd = speed_cmd_with_audio(i, speed) if int(has_aud) else speed_cmd_without_audio(i, speed)
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         out, err = process.communicate()
-        if len(setting) == 1:
+        if len(setting) == 2:
             # resolution will not change, so change the name
             os.rename("./tmp/tmp_speed_{}.mp4".format(i + 1), "./tmp/tmp_mod_{}.mp4".format(i + 1))
         else:
             # if resolution is given, change the resolution as well
-            start_center, start_res = setting[1], setting[2]
-            end_center, end_res = setting[3], setting[4]
+            start_center, start_res = setting[2], setting[3]
+            end_center, end_res = setting[4], setting[5]
             cmd = ["ffmpeg", "-i", "./tmp/tmp_speed_{}.mp4".format(i + 1),
-                   "-vf", "scale={}".format(end_res), "-y", "./tmp/tmp_mod_{}.mp4".format(i + 1)]
+                   "-vf", "scale={}".format(end_res), "-c:v", "copy", "-c:a", "copy",
+                   "-y", "./tmp/tmp_mod_{}.mp4".format(i + 1)]
             process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             out, err = process.communicate()
 
