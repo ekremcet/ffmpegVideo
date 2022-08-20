@@ -1,9 +1,9 @@
-#Video Keyword; ref frame; audio_path (write 0 if video has audio track); video_path
+#Video Keyword; ref frame; audio_path (0 if video has audio track); video_path
 video1; 0; 0; ./Data/first.mp4
 video2; 10; 0; ./Data/second.mp4
 video3; 3210; ./Data/third_audio.m4a; ./Data/third_video.mp4
 
 #Timeline Keyword; source; play speed(optional); [start frame; center (optional); resolution(optional)]; [stop frame; center (optional); resolution(optional)]
-timeline; video1; 1; [0, 960x640, 3840x2160]; [110, 960x640, 3840x2160]
-timeline; video3; 0.5; [60, 960x640, 1920x1080]; [250, 1920x1080, 3840x2160]
+timeline; video1; 1; [0]; [110]
+timeline; video3; 0.5; [60, 960x540, 1920x1080]; [250, 1920x1080, 3840x2160]
 timeline; video2; 2; [30]; [230]

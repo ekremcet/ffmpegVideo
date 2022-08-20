@@ -150,9 +150,11 @@ def speed_cmd_without_audio(i, speed):
 
 def zoom_command(i, setting):
     start_center, start_res = setting[2], setting[3]
+    start_width = start_center.split("x")[0].strip()
+    start_height = start_center.split("x")[1].strip()
     end_center, end_res = setting[4], setting[5]
     cmd = ["ffmpeg", "-i", "./tmp/tmp_speed_{}.mp4".format(i + 1),
-           "-vf", "scale={}".format(end_res),
+           "-vf", "crop={}:{},scale={}".format(start_width, start_height, end_res),
            "-y", "./tmp/tmp_mod_{}.mp4".format(i + 1)]
 
     return cmd
@@ -177,7 +179,7 @@ def scale_and_speed_videos():
             # resolution will not change, so change the name
             os.rename("./tmp/tmp_speed_{}.mp4".format(i + 1), "./tmp/tmp_mod_{}.mp4".format(i + 1))
         else:
-            # if resolution is given, change the resolution as well
+            # if resolution is given, change the resolution via zooming
             cmd = zoom_command(i, setting)
             process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             out, err = process.communicate()
