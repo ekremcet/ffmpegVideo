@@ -1,4 +1,5 @@
 import os
+import signal
 import shutil
 import subprocess
 
@@ -12,10 +13,10 @@ video_paths = []
 
 
 def read_video_info(line):
-    video_name = line.split(";")[0].strip()
-    ref_frame = line.split(";")[1].strip()
-    audio_path = line.split(";")[2].strip()
-    vid_path = line.split(";")[3].strip()
+    video_name = line.split(";")[1].strip()
+    ref_frame = line.split(";")[2].strip()
+    audio_path = line.split(";")[3].strip()
+    vid_path = line.split(";")[4].strip()
     videos[video_name] = (ref_frame, audio_path, vid_path)
 
 
@@ -117,13 +118,6 @@ def get_video_settings(i, video):
         return video_speed, has_aud
 
 
-def speed_cmd_with_audio(i, speed):
-    return ["ffmpeg", "-i", "./tmp/tmp_{}.mp4".format(i + 1),
-            "-filter_complex", "[0:v]setpts={}*PTS[v];[0:a]atempo={}[a]".format(1.0 / float(speed), speed),
-            "-map", "[v]", "-map", "[a]",
-            "-y", "./tmp/tmp_speed_{}.mp4".format(i + 1)]
-
-
 def add_dummy_silent_track(i):
     cmd = ["ffmpeg", "-i", "./tmp/tmp_{}.mp4".format(i + 1), "-f",
            "lavfi", "-i", "anullsrc", "-shortest", "-c:v", "copy",
@@ -141,48 +135,85 @@ def add_audio_track(i):
     out, err = process.communicate()
 
 
-def speed_cmd_without_audio(i, speed):
-    return ["ffmpeg", "-i", "./tmp/tmp_dum_{}.mp4".format(i + 1),
+def change_speed(i, input_name, speed):
+    cmd = ["ffmpeg", "-i", input_name,
             "-filter_complex", "[0:v]setpts={}*PTS[v];[0:a]atempo={}[a]".format(1.0 / float(speed), speed),
             "-map", "[v]", "-map", "[a]",
             "-y", "./tmp/tmp_speed_{}.mp4".format(i + 1)]
 
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = process.communicate()
 
-def zoom_command(i, setting):
+
+def zoom(i, input_name, setting):
     start_center, start_res = setting[2], setting[3]
     start_width = start_center.split("x")[0].strip()
     start_height = start_center.split("x")[1].strip()
     end_center, end_res = setting[4], setting[5]
-    cmd = ["ffmpeg", "-i", "./tmp/tmp_speed_{}.mp4".format(i + 1),
+    cmd = ["ffmpeg", "-i", input_name,
            "-vf", "crop={}:{},scale={}".format(start_width, start_height, end_res),
            "-y", "./tmp/tmp_mod_{}.mp4".format(i + 1)]
 
-    return cmd
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = process.communicate()
+
+
+def check_required_changes(setting):
+    speed = setting[0]
+    has_aud = setting[1]
+
+    changeAudio = not has_aud
+    changeSpeed = (speed != "1")
+    doZoom = len(setting) != 2
+
+    return changeAudio, changeSpeed, doZoom
+
+
+def change_speed_and_zoom(i, inp_name, setting, flags):
+    _, speedFlag, zoomFlag = flags
+    speed = setting[0]
+    if speedFlag:
+        # audio, speed
+        change_speed(i, inp_name, speed)
+        inp_name = "./tmp/tmp_speed_{}.mp4".format(i + 1)
+        if zoomFlag:
+            # audio, speed, zoom
+            zoom(i, inp_name, setting)
+        else:
+            # audio, speed, no zoom
+            os.rename(inp_name, "./tmp/tmp_mod_{}.mp4".format(i + 1))
+    else:
+        if zoomFlag:
+            # audio, no speed, zoom
+            zoom(i, inp_name, setting)
+        else:
+            # audio, no speed, no zoom
+            os.rename(inp_name, "./tmp/tmp_mod_{}.mp4".format(i + 1))
+
+
+def make_required_changes(i, setting, flags):
+    speed = setting[0]
+    audioFlag, speedFlag, zoomFlag = flags
+    if audioFlag:
+        # audio
+        # add_dummy_silent_track(i) -> ignore it, no more use case
+        add_audio_track(i)
+        inp_name = "./tmp/tmp_dum_{}.mp4".format(i + 1)
+        change_speed_and_zoom(i, inp_name, setting, flags)
+    else:
+        # no audio
+        inp_name = "./tmp/tmp_{}.mp4".format(i + 1)
+        change_speed_and_zoom(i, inp_name, setting, flags)
 
 
 def scale_and_speed_videos():
     print("Changing speed and scale of the videos")
     video_settings = [get_video_settings(i, video) for i, video in enumerate(timeline)]
+    # prepare videos individually
     for i, setting in enumerate(video_settings):
-        # prepare videos individually
-        speed = setting[0]
-        has_aud = setting[1]
-        # check if the video has audio stream, if not add the specified audio track
-        if not has_aud:
-            # add_dummy_silent_track(i) -> ignore it, no more use case
-            add_audio_track(i)
-        # change the speed first
-        cmd = speed_cmd_with_audio(i, speed) if int(has_aud) else speed_cmd_without_audio(i, speed)
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        out, err = process.communicate()
-        if len(setting) == 2:
-            # resolution will not change, so change the name
-            os.rename("./tmp/tmp_speed_{}.mp4".format(i + 1), "./tmp/tmp_mod_{}.mp4".format(i + 1))
-        else:
-            # if resolution is given, change the resolution via zooming
-            cmd = zoom_command(i, setting)
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            out, err = process.communicate()
+        # check required changes first
+        flags = check_required_changes(setting)
+        make_required_changes(i, setting, flags)
 
 
 def prepare_tmp_videos():
@@ -191,6 +222,12 @@ def prepare_tmp_videos():
     print("Preparing tmp videos to stitch")
     trim_videos()
     scale_and_speed_videos()
+
+
+def delete_tmp_folder():
+    # delete the tmp folder
+    if os.path.exists("./tmp/"):
+        shutil.rmtree("./tmp/", ignore_errors=False, onerror=None)
 
 
 def stitch_videos():
@@ -211,11 +248,23 @@ def stitch_videos():
         for line in p.stdout:
             print(line, end="")
 
-    # delete the tmp folder
-    shutil.rmtree("./tmp/", ignore_errors=False, onerror=None)
+    delete_tmp_folder()
+
+
+def sigterm_handler(_signo, _stack_frame):
+    # catch the interrupted subprocess here
+    delete_tmp_folder()
 
 
 if __name__ == '__main__':
-    read_txt("./timeline.txt")
-    prepare_tmp_videos()
-    stitch_videos()
+    try:
+        signal.signal(signal.SIGTERM, sigterm_handler)
+        read_txt("./timeline.txt")
+        prepare_tmp_videos()
+        stitch_videos()
+    except KeyboardInterrupt:
+        print("Exiting...")
+        delete_tmp_folder()
+    except Exception:
+        print("Error occurred, stopping the program..")
+        delete_tmp_folder()
