@@ -7,7 +7,6 @@ import subprocess
 videos = {}
 timeline = []
 video_order = []
-video_fps = []
 audio_paths = []
 video_paths = []
 
@@ -59,63 +58,85 @@ def read_txt(config_path):
         read_config(f)
 
 
-def get_frame_rate(video_path):
+def get_video_frame_info(video_path):
     # this is used to get framerate of video
     # framerate will be used to determine exact second to trim the video
     cmd = ["ffprobe", video_path, "-v", "0", "-select_streams", "v",
-           "-print_format", "flat", "-show_entries", "stream=r_frame_rate"]
+           "-print_format", "flat", "-show_entries", "stream=r_frame_rate, duration"]
     out = subprocess.check_output(cmd)
-    rate = out.decode("utf-8").split("=")[1].strip()[1:-1].split("/")
+    rate_line, duration_line = out.decode("utf-8").split("\n")[:-1]
+    rate = rate_line.split("=")[1].strip()[1:-1].split("/")
+    duration = duration_line.split("=")[1].strip()[1:-1]
     if len(rate) == 1:
-        return float(rate[0])
+        return float(rate[0]), float(duration)
     elif len(rate) == 2:
-        return float(rate[0]) / float(rate[1])
-    return -1
+        return float(rate[0]) / float(rate[1]), float(duration)
+    return -1, -1
 
 
-def calculate_time_stamp(video, fps):
+def calculate_time_stamp(video, fps, duration):
     video_start_frame = video["StartConfig"]["Frame"]
     video_end_frame = video["EndConfig"]["Frame"]
 
     start_time = float(video_start_frame)/fps
     end_time = float(video_end_frame)/fps
 
-    return (start_time, end_time)
+    if start_time > duration:
+        # ignore the clip
+        return -1, -1
+    elif end_time > duration:
+        return start_time, duration
+    else:
+        return start_time, end_time
 
 
 def trim_videos():
     print("Trimming videos with given frame numbers")
     # fill the global arrays (they will be used later as well)
-    global video_order, audio_paths, video_paths, video_fps
+    global timeline, video_order, audio_paths, video_paths
+    video_fps = []
+    video_durations = []
     video_order = [timeline[i]["Video"] for i in range(len(timeline))]
     audio_paths = [videos[vid_name][1] for vid_name in video_order]
     video_paths = [videos[vid_name][2] for vid_name in video_order]
-    # get frame rate of each video to determine exact time stamp for trimming
-    video_fps = [get_frame_rate(vid_path) for vid_path in video_paths]
+    # get frame rate and duration of each video to determine exact time stamp for trimming
+    for vid_path in video_paths:
+        fps, duration = get_video_frame_info(vid_path)
+        video_fps.append(fps)
+        video_durations.append(duration)
     # calculate time stamps
-    video_stamps = [calculate_time_stamp(video, video_fps[i]) for i, video in enumerate(timeline)]
+    video_stamps = [calculate_time_stamp(video, video_fps[i], video_durations[i])
+                    for i, video in enumerate(timeline)]
     os.makedirs("./tmp", exist_ok=True)
+    vid_ind = 0
     for i, video_path in enumerate(video_paths):
         # prepare videos individually
         start_time, end_time = video_stamps[i]
+        if start_time == -1:
+            # skip this clip and remove information from lists
+            del timeline[i]
+            del audio_paths[i]
+            del video_order[i]
+            continue
         cmd = ["ffmpeg", "-ss", str(start_time), "-to", str(end_time), "-i", video_path,
-               "-c:v", "copy", "-c:a", "copy", "-y", "./tmp/tmp_{}.mp4".format(i + 1)]
+               "-c:v", "copy", "-c:a", "copy", "-y", "./tmp/tmp_{}.mp4".format(vid_ind + 1)]
         # run the command
+        vid_ind += 1
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         out, err = process.communicate()
 
 
 def get_video_settings(i, video):
     video_speed = video["Speed"]
-    has_aud = True if len(audio_paths[i]) == 1 else False  # if there is no audio path, video has audio
+    mod_aud = False if len(audio_paths[i]) == 1 else True  # if there is no audio path don't modify audio
     if "Center" in video["StartConfig"]:
         video_start_center = video["StartConfig"]["Center"]
         video_start_res = video["StartConfig"]["Resolution"]
         video_end_center = video["EndConfig"]["Center"]
         video_end_res = video["EndConfig"]["Resolution"]
-        return video_speed, has_aud, video_start_center, video_start_res, video_end_center, video_end_res
+        return video_speed, mod_aud, video_start_center, video_start_res, video_end_center, video_end_res
     else:
-        return video_speed, has_aud
+        return video_speed, mod_aud
 
 
 def add_dummy_silent_track(i):
@@ -160,9 +181,9 @@ def zoom(i, input_name, setting):
 
 def check_required_changes(setting):
     speed = setting[0]
-    has_aud = setting[1]
+    mod_aud = setting[1]
 
-    changeAudio = not has_aud
+    changeAudio = mod_aud
     changeSpeed = (speed != "1")
     doZoom = len(setting) != 2
 
@@ -192,7 +213,6 @@ def change_speed_and_zoom(i, inp_name, setting, flags):
 
 
 def make_required_changes(i, setting, flags):
-    speed = setting[0]
     audioFlag, speedFlag, zoomFlag = flags
     if audioFlag:
         # audio
