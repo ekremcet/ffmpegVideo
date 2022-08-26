@@ -8,6 +8,8 @@ videos = {}
 timeline = []
 video_order = []
 audio_paths = []
+video_fps = []
+video_durations = []
 video_paths = []
 
 
@@ -93,9 +95,7 @@ def calculate_time_stamp(video, fps, duration):
 def trim_videos():
     print("Trimming videos with given frame numbers")
     # fill the global arrays (they will be used later as well)
-    global timeline, video_order, audio_paths, video_paths
-    video_fps = []
-    video_durations = []
+    global timeline, video_order, audio_paths, video_paths, video_fps, video_durations
     video_order = [timeline[i]["Video"] for i in range(len(timeline))]
     audio_paths = [videos[vid_name][1] for vid_name in video_order]
     video_paths = [videos[vid_name][2] for vid_name in video_order]
@@ -117,6 +117,8 @@ def trim_videos():
             del timeline[i]
             del audio_paths[i]
             del video_order[i]
+            del video_fps[i]
+            del video_durations[i]
             continue
         cmd = ["ffmpeg", "-ss", str(start_time), "-to", str(end_time), "-i", video_path,
                "-c:v", "copy", "-c:a", "copy", "-y", "./tmp/tmp_{}.mp4".format(vid_ind + 1)]
@@ -132,9 +134,12 @@ def get_video_settings(i, video):
     if "Center" in video["StartConfig"]:
         video_start_center = video["StartConfig"]["Center"]
         video_start_res = video["StartConfig"]["Resolution"]
+        video_start_frame = video["StartConfig"]["Frame"]
         video_end_center = video["EndConfig"]["Center"]
         video_end_res = video["EndConfig"]["Resolution"]
-        return video_speed, mod_aud, video_start_center, video_start_res, video_end_center, video_end_res
+        video_end_frame = video["EndConfig"]["Frame"]
+        return video_speed, mod_aud, video_start_center, video_start_res, video_end_center, video_end_res, \
+               video_start_frame, video_end_frame
     else:
         return video_speed, mod_aud
 
@@ -166,13 +171,42 @@ def change_speed(i, input_name, speed):
     out, err = process.communicate()
 
 
+def zoompan_cmd(zoom_f, speed, fps, end_res, start_frame, end_frame):
+    # find the zoom scale increase per frame based on the clip length
+    # S = (zoom_f - 1) / num_frames
+    # Don't forget the speed change
+    num_frames = (int(end_frame) - int(start_frame)) / float(speed)
+    zoom_per_frame = float((zoom_f - 1) / num_frames)
+    cmd = "zoompan=z="
+    # first zooming to the location
+    cmd += "'min(max(zoom,pzoom)+{},{})':d=0".format(zoom_per_frame, zoom_f)
+    # change the x scale
+    cmd += ":x='iw/{}-(iw/zoom/{})'".format(zoom_f, zoom_f)
+    # change the y scale
+    cmd += ":y='ih/{}-(ih/zoom/{})'".format(zoom_f, zoom_f)
+    # define fps and final scale
+    cmd += ":fps={}':s={}'".format(fps, end_res)
+
+    return cmd
+
+
 def zoom(i, input_name, setting):
+    speed = setting[0]
     start_center, start_res = setting[2], setting[3]
-    start_width = start_center.split("x")[0].strip()
-    start_height = start_center.split("x")[1].strip()
     end_center, end_res = setting[4], setting[5]
+    start_center_x = start_center.split("x")[0].strip()
+    start_width = start_res.split("x")[0].strip()
+    start_frame, end_frame = setting[6], setting[7]
+
+    # find the duration of zoom/pan
+    fps = video_fps[i]
+    # find the zoom factor
+    zoom_f = int(start_width) / int(start_center_x)
+
+    zoompan = zoompan_cmd(zoom_f, speed, fps, end_res, start_frame, end_frame)
+
     cmd = ["ffmpeg", "-i", input_name,
-           "-vf", "crop={}:{},scale={}".format(start_width, start_height, end_res),
+           "-vf", "{}".format(zoompan),
            "-y", "./tmp/tmp_mod_{}.mp4".format(i + 1)]
 
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -247,6 +281,7 @@ def prepare_tmp_videos():
 def delete_tmp_folder():
     # delete the tmp folder
     if os.path.exists("./tmp/"):
+        pass
         shutil.rmtree("./tmp/", ignore_errors=False, onerror=None)
 
 

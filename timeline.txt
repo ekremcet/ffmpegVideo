@@ -4,6 +4,6 @@ video; sample; 10; 0; ./Data/second.mp4
 video; noaudio; 3210; ./Data/third_audio.m4a; ./Data/third_video.mp4
 
 #Timeline Keyword; source; play speed(optional); [start frame; center (optional); resolution(optional)]; [stop frame; center (optional); resolution(optional)]
-timeline; goodvideo; 1; [0]; [110]
+timeline; goodvideo; 1; [150, 1920x1080, 3840x2160]; [200, 1920x1080, 3840x2160]
 timeline; noaudio; 0.5; [60, 960x540, 1920x1080]; [250, 1920x1080, 3840x2160]
-timeline; sample; 2; [30]; [23523]
+timeline; sample; 2; [30]; [2532]
