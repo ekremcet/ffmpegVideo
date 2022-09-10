@@ -4,6 +4,6 @@ video; lowres; 10; 1; ./Data/pexels-maciej-panfazi-6827122.mp4
 video; noaudio; 3210; ./Data/third_audio.m4a; ./Data/Pexels Videos 2570.mp4
 
 #Timeline Keyword; source; play speed; [start frame; center; resolution]; [stop frame; center; resolution]
+timeline; lowres; 1; [60, 1920x1080, 3840x2160]; [250, 960x540, 1920x1080]
 timeline; goodvideo; 1; [150, 960x540, 1920x1080]; [300, 1920x1080, 1920x1080]
-timeline; lowres; 0.5; [60, 1920x1080, 3840x2160]; [250, 960x540, 1920x1080]
-timeline; noaudio; 2; [30, 1920x1080, 3840x2160]; [2532, 1920x1080, 3840x2160]
+timeline; noaudio; 2; [30, 960x540, 1920x1080]; [2532, 1920x1080, 3840x2160]

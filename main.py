@@ -135,6 +135,8 @@ def trim_videos():
             del video_fps[i]
             del video_durations[i]
             continue
+        # Update video duration array with trimmed lengths
+        video_durations[i] = end_time - start_time
         cmd = ["ffmpeg", "-ss", str(start_time), "-to", str(end_time), "-i", video_path,
                "-c:v", "copy", "-c:a", "copy", "-y", "./tmp/tmp_{}.mp4".format(vid_ind + 1)]
         # run the command
@@ -161,7 +163,7 @@ def get_video_settings(i, video):
 
 def add_dummy_silent_track(i):
     cmd = ["ffmpeg", "-i", "./tmp/tmp_{}.mp4".format(i + 1), "-f",
-           "lavfi", "-i", "anullsrc", "-shortest", "-c:v", "copy",
+           "lavfi", "-t", "{}".format(video_durations[i]), "-i", "anullsrc", "-shortest", "-c:v", "copy",
            "-y", "./tmp/tmp_dum_{}.mp4".format(i + 1)]
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     out, err = process.communicate()
@@ -186,17 +188,16 @@ def change_speed(i, input_name, speed):
     out, err = process.communicate()
 
 
-def zoomin_cmd(input_name, i, zoom_f, speed, fps, end_center, end_res, start_frame, end_frame):
-    # find the zoom scale increase per frame based on the clip length
-    # S = (zoom_f - 1) / num_frames
-    # Don't forget the speed change
+def zoomin_cmd(input_name, i, zoom_f, speed, end_center, end_res, start_frame, end_frame):
+    # find the zoom and increase per frame based on the clip length
+    fps = video_fps[i]
     num_frames = (int(end_frame) - int(start_frame)) / float(speed)
     center_x = int(end_center.split("x")[0].strip())
     center_y = int(end_center.split("x")[1].strip())
-    zoom_per_frame = float((zoom_f - 1) / num_frames)
+    zoom_per_frame = float((zoom_f - 1.0) / (num_frames * 4))
     zoom_cmd = "zoompan=z="
     # first zooming to the location
-    zoom_cmd += "'min(max(zoom,pzoom)+{},{})':d=0".format(zoom_per_frame, zoom_f)
+    zoom_cmd += "'min(max(zoom,pzoom+{}),{})':d=1".format(zoom_per_frame, zoom_f)
     # change the x scale
     zoom_cmd += ":x='{}'".format(center_x)
     # change the y scale
@@ -211,17 +212,18 @@ def zoomin_cmd(input_name, i, zoom_f, speed, fps, end_center, end_res, start_fra
     return cmd
 
 
-def zoomout_cmd(input_name, i, zoom_f, speed, fps, end_center, end_res, start_frame, end_frame):
-    # TODO IMPLEMENT THIS
+def zoomout_cmd(input_name, i, zoom_f, speed, end_center, end_res, start_frame, end_frame):
     # S = (zoom_f - 1) / num_frames
     # Don't forget the speed change
+    fps = video_fps[i]
     num_frames = (int(end_frame) - int(start_frame)) / float(speed)
     center_x = int(end_center.split("x")[0].strip())
     center_y = int(end_center.split("x")[1].strip())
-    zoom_per_frame = float((zoom_f - 1) / num_frames)
+    zoom_f = 1 / zoom_f  # do this
+    zoom_per_frame = float((zoom_f - 1.0) * 4 / (num_frames))
     zoom_cmd = "zoompan=z="
     # first zooming to the location
-    zoom_cmd += "'min(max(zoom,pzoom)+{},{})':d=0".format(zoom_per_frame, zoom_f)
+    zoom_cmd += "'if(lte(pzoom,1.0),{},max(1.001,pzoom-{}))':d=1".format(zoom_f, zoom_per_frame)
     # change the x scale
     zoom_cmd += ":x='{}'".format(center_x)
     # change the y scale
@@ -236,7 +238,7 @@ def zoomout_cmd(input_name, i, zoom_f, speed, fps, end_center, end_res, start_fr
     return cmd
 
 
-def pan_cmd(input_name, i, speed, end_res, start_center, end_center, start_frame, end_frame):
+def pan_cmd(input_name, i, speed, end_res, start_center, end_center):
     # S = (zoom_f - 1) / num_frames
     # Don't forget the speed change
 
@@ -270,8 +272,6 @@ def zoom(i, input_name, setting):
     start_center, start_res = setting[2], setting[3]
     end_center, end_res = setting[4], setting[5]
     start_frame, end_frame = setting[6], setting[7]
-    # find the duration of zoom/pan
-    fps = video_fps[i]
     # find the zoom factor
     start_width = int(start_res.split("x")[0].strip())
     end_width = int(end_res.split("x")[0].strip())
@@ -280,16 +280,14 @@ def zoom(i, input_name, setting):
     cmd = ""
     if start_res == end_res:
         # Pan effect
-        cmd = pan_cmd(input_name, i, speed, end_res, start_center, end_center, start_frame, end_frame)
+        cmd = pan_cmd(input_name, i, speed, end_res, start_center, end_center)
     elif start_width > end_width:
         # zoom in effect
-        cmd = zoomin_cmd(input_name, i, zoom_f, speed, fps, end_center, end_res, start_frame, end_frame)
+        cmd = zoomin_cmd(input_name, i, zoom_f, speed, end_center, end_res, start_frame, end_frame)
     elif start_width < end_width:
         # zoom out effect
-        cmd = zoomout_cmd(input_name, i, zoom_f, speed, fps, end_center, end_res, start_frame, end_frame)
+        cmd = zoomout_cmd(input_name, i, zoom_f, speed, end_center, end_res, start_frame, end_frame)
 
-    print("Zoom: {}".format(i + 1))
-    print(cmd)
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     out, err = process.communicate()
 
@@ -412,7 +410,7 @@ def delete_tmp_folder():
     # delete the tmp folder
     if os.path.exists("./tmp/"):
         pass
-        # shutil.rmtree("./tmp/", ignore_errors=False, onerror=None)
+        shutil.rmtree("./tmp/", ignore_errors=False, onerror=None)
 
 
 def stitch_videos():
@@ -449,6 +447,7 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         print("Exiting...")
         delete_tmp_folder()
-    except Exception:
+    except Exception as e:
         print("Error occurred, stopping the program..")
+        print(e)
         delete_tmp_folder()
