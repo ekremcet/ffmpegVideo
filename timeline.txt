@@ -1,7 +1,7 @@
 #Video; Video Keyword; ref frame; audio_path (0 for no change, 1 to add dummy audio track, or custom audio path); video_path
-video; goodvideo; 0; 1; ./Data/pexels-tima-miroshnichenko-7033786.mp4
-video; lowres; 10; 1; ./Data/pexels-maciej-panfazi-6827122.mp4
-video; noaudio; 3210; ./Data/third_audio.m4a; ./Data/Pexels Videos 2570.mp4
+video; goodvideo; 0; 1; ./Data/first.mp4
+video; lowres; 10; 1; ./Data/second.mp4
+video; noaudio; 3210; ./Data/third_audio.m4a; ./Data/third_video.mp4
 
 #Timeline Keyword; source; play speed; [start frame; center; resolution]; [stop frame; center; resolution]
 timeline; lowres; 1; [60, 1920x1080, 3840x2160]; [250, 960x540, 1920x1080]
